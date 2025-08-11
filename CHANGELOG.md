@@ -1,3 +1,21 @@
+56.0.0 / 2025-01-17
+===================
+  **[BREAKING]**
+  * Update to Electron 34.0.0
+
+55.0.0 / 2024-11-04
+===================
+  **[BREAKING]**
+  * Update to Electron 33.0.2
+
+54.0.0 / 2024-08-05
+===================
+  **[BREAKING]**
+  * Update to Electron 31.2.1
+
+53.0.0 / 2023-11-16
+===================
+  * Hide menu bar in child windows if hidden globally.
 
 52.0.0 / 2023-08-25
 ===================
