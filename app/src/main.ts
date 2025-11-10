@@ -57,6 +57,24 @@ const appArgs =
       ) as OutputOptions);
 
 log.debug('appArgs', appArgs);
+
+// Set a clean app name for WM_CLASS on Linux (instead of the normalized name with hash)
+// Also set userData path to use the clean name so logins persist across rebuilds
+if (appArgs.name) {
+  const cleanName = appArgs.name.replace(/\s+/g, '');
+  app.setName(cleanName);
+  log.debug('Set app name to:', cleanName);
+
+  // Set userData path explicitly to use the clean name
+  // This ensures logins persist even when the app is rebuilt
+  if (!appArgs.portable) {
+    const defaultAppData = app.getPath('appData');
+    const userDataPath = path.join(defaultAppData, cleanName);
+    app.setPath('userData', userDataPath);
+    log.debug('Set userData path to:', userDataPath);
+  }
+}
+
 // Do this relatively early so that we can start storing appData with the app
 if (appArgs.portable) {
   log.debug(
@@ -201,9 +219,9 @@ let currentBadgeCount = 0;
 const setDockBadge = isOSX()
   ? (count?: number | string, bounce = false): void => {
       if (count !== undefined) {
-        app.dock.setBadge(count.toString());
+        app.dock?.setBadge(count.toString());
         if (bounce && typeof count === 'number' && count > currentBadgeCount)
-          app.dock.bounce();
+          app.dock?.bounce();
         currentBadgeCount = typeof count === 'number' ? count : 0;
       }
     }
@@ -344,6 +362,19 @@ app.on(
 async function onReady(): Promise<void> {
   // Warning: `mainWindow` below is the *global* unique `mainWindow`, created at init time
   mainWindow = await createMainWindow(appArgs, setDockBadge);
+
+  // Grant notification permission by default (override Chrome's settings)
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (webContents, permission, callback) => {
+      log.debug('Permission requested:', permission);
+      if (permission === 'notifications') {
+        callback(true); // Always grant notification permission
+      } else {
+        // Default behavior for other permissions
+        callback(true);
+      }
+    },
+  );
 
   createTrayIcon(appArgs, mainWindow);
 

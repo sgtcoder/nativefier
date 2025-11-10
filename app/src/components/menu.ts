@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import path from 'path';
 
 import {
+  BaseWindow,
   BrowserWindow,
   clipboard,
   Menu,
@@ -130,7 +131,7 @@ export function generateMenu(
         label: 'Clear App Data',
         click: (
           item: MenuItem,
-          focusedWindow: BrowserWindow | undefined,
+          focusedWindow: BaseWindow | undefined,
         ): void => {
           log.debug('Clear App Data.click', {
             item,
@@ -140,7 +141,7 @@ export function generateMenu(
           if (!focusedWindow) {
             focusedWindow = mainWindow;
           }
-          clearAppData(focusedWindow).catch((err) =>
+          clearAppData(focusedWindow as BrowserWindow).catch((err) =>
             log.error('clearAppData ERROR', err),
           );
         },
@@ -189,7 +190,7 @@ export function generateMenu(
         visible: mainWindow.isFullScreenable() || isOSX(),
         click: (
           item: MenuItem,
-          focusedWindow: BrowserWindow | undefined,
+          focusedWindow: BaseWindow | undefined,
         ): void => {
           log.debug('Toggle Full Screen.click()', {
             item,
@@ -256,12 +257,12 @@ export function generateMenu(
       {
         label: 'Toggle Developer Tools',
         accelerator: isOSX() ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
-        click: (item: MenuItem, focusedWindow: BrowserWindow | undefined) => {
+        click: (item: MenuItem, focusedWindow: BaseWindow | undefined) => {
           log.debug('Toggle Developer Tools.click()', { item, focusedWindow });
           if (!focusedWindow) {
             focusedWindow = mainWindow;
           }
-          focusedWindow.webContents.toggleDevTools();
+          (focusedWindow as BrowserWindow).webContents.toggleDevTools();
         },
       },
     );
