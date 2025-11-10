@@ -250,6 +250,11 @@ export function initArgs(argv: string[]): yargs.Argv<RawOptions> {
         "allow app to stay in system tray. If 'start-in-tray' is set as argument, don't show main window on first start",
       choices: ['true', 'false', 'start-in-tray'],
     })
+    .option('audio-notifications', {
+      default: true,
+      description: 'enable notifications triggered by audio playback (default: true)',
+      type: 'boolean',
+    })
     .option('width', {
       defaultDescription: '1280',
       description: 'app window default width in pixels',

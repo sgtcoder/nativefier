@@ -7,6 +7,7 @@ import {
   BrowserWindow,
   Event,
   HandlerDetails,
+  Notification,
 } from 'electron';
 import windowStateKeeper from 'electron-window-state';
 
@@ -146,8 +147,10 @@ export async function createMainWindow(
   }
 
   ipcMain.on('notification-click', () => {
-    log.debug('ipcMain.notification-click');
+    log.debug('notification-click');
     mainWindow.show();
+    mainWindow.focus();
+    mainWindow.restore();
   });
 
   setupSessionInteraction(mainWindow);
@@ -189,6 +192,7 @@ function setupCloseEvent(options: OutputOptions, window: BrowserWindow): void {
         window.moveTabToNewWindow();
       }
       window.setFullScreen(false);
+      // @ts-expect-error - Electron 39 changed event types
       window.once('leave-full-screen', (event: Event) =>
         hideWindow(
           window,
@@ -248,13 +252,43 @@ function setupNotificationBadge(
   window: BrowserWindow,
   setDockBadge: (value: number | string, bounce?: boolean) => void,
 ): void {
-  ipcMain.on('notification', () => {
-    log.debug('ipcMain.notification');
-    if (!isOSX() || window.isFocused()) {
+  // Remove any existing notification listeners to prevent duplicates
+  const listenerCount = ipcMain.listenerCount('notification');
+  log.info(`Removing ${listenerCount} existing notification listeners`);
+  ipcMain.removeAllListeners('notification');
+
+  ipcMain.on('notification', (event, title: string, opt: NotificationOptions) => {
+    log.info('notification received', { title, body: opt?.body, listenerCount: ipcMain.listenerCount('notification') });
+
+    // Show native notification on Linux/Windows
+    if (!isOSX() && Notification.isSupported()) {
+      try {
+        const notification = new Notification({
+          title: title || options.name || 'Notification',
+          body: opt?.body || '',
+          icon: opt?.icon || getAppIcon(),
+          silent: opt?.silent || false,
+        });
+
+        notification.on('click', () => {
+          log.debug('notification.click');
+          window.show();
+          window.focus();
+        });
+
+        notification.show();
+      } catch (err) {
+        log.error('Failed to show notification:', err);
+      }
       return;
     }
-    setDockBadge('•', options.bounce);
+
+    // macOS dock badge
+    if (isOSX() && !window.isFocused()) {
+      setDockBadge('•', options.bounce);
+    }
   });
+
   window.on('focus', () => {
     log.debug('mainWindow.focus');
     setDockBadge('');

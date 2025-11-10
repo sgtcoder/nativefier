@@ -12,7 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { ipcRenderer } from 'electron';
-import { OutputOptions } from '../../shared/src/options/model';
+import { OutputOptions, WindowOptions } from '../../shared/src/options/model';
 
 // Do *NOT* add 3rd-party imports here in preload (except for webpack `externals` like electron).
 // They will work during development, but break in the prod build :-/ .
@@ -36,6 +36,9 @@ export const INJECT_DIR = path.join(__dirname, '..', 'inject');
  * @param createCallback
  * @param clickCallback
  */
+// Shared notification tracking (used by both FB notifications and title monitoring)
+let lastNotificationTime = 0;
+
 function setNotificationCallback(
   createCallback: {
     (title: string, opt: NotificationOptions): void;
@@ -44,18 +47,57 @@ function setNotificationCallback(
   clickCallback: { (): void; (this: Notification, ev: Event): unknown },
 ): void {
   const OldNotify = window.Notification;
+
+  if (!OldNotify) {
+    log.error('setNotificationCallback: window.Notification is not available!');
+    return;
+  }
+
+  // Track last web notification to prevent duplicates
+  let lastWebNotification: { title: string; time: number } | null = null;
+
   const newNotify = function (
     title: string,
     opt: NotificationOptions,
   ): Notification {
-    createCallback(title, opt);
-    const instance = new OldNotify(title, opt);
-    instance.addEventListener('click', clickCallback);
-    return instance;
+    const now = Date.now();
+
+    // Deduplicate: only send if different from last notification or more than 1 second ago
+    if (lastWebNotification &&
+        lastWebNotification.title === title &&
+        now - lastWebNotification.time < 1000) {
+      // Skip duplicate
+    } else {
+      lastWebNotification = { title, time: now };
+      lastNotificationTime = now;
+      createCallback(title, opt);
+    }
+
+    // Return a fake notification object so the website doesn't break
+    // (we're showing the notification through the main process instead)
+    const fakeNotification = {
+      close: () => {},
+      addEventListener: (event: string, handler: EventListener) => {
+        if (event === 'click') {
+          // Store click handler to call when notification is clicked
+          (fakeNotification as any)._clickHandler = handler;
+        }
+      },
+      removeEventListener: () => {},
+      dispatchEvent: () => true,
+    } as unknown as Notification;
+
+    return fakeNotification;
   };
-  newNotify.requestPermission = OldNotify.requestPermission.bind(OldNotify);
+
+  // Force permission to always be 'granted' to override Chrome's notification settings
+  newNotify.requestPermission = () => {
+    return Promise.resolve('granted' as NotificationPermission);
+  };
   Object.defineProperty(newNotify, 'permission', {
-    get: () => OldNotify.permission,
+    get: () => {
+      return 'granted' as NotificationPermission;
+    },
   });
 
   // @ts-expect-error TypeScript says its not compatible, but it works?
@@ -185,7 +227,7 @@ function setupScreenSharePickerElement(
   selectionElem.innerHTML = `
     <button class="desktop-capturer-selection__close" id="${id}-close" aria-label="Close screen share picker" type="button">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
-      <path fill="currentColor" d="m12 10.586 4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/>   
+      <path fill="currentColor" d="m12 10.586 4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/>
       </svg>
     </button>
     <div class="desktop-capturer-selection__scroller">
@@ -319,18 +361,126 @@ function notifyNotificationCreate(
 ): void {
   ipcRenderer.send('notification', title, opt);
 }
+
 function notifyNotificationClick(): void {
   ipcRenderer.send('notification-click');
 }
 
 // @ts-expect-error TypeScript thinks these are incompatible but they aren't
 setNotificationCallback(notifyNotificationCreate, notifyNotificationClick);
+
+// Detect when Facebook plays a notification sound
+let lastNotifiedSoundTime = 0;
+let audioNotificationsEnabled = true; // Default to enabled
+
+// Intercept Audio constructor to detect sound playback
+const OriginalAudio = window.Audio;
+(window as any).Audio = function(...args: any[]) {
+  const audio = new OriginalAudio(...args);
+
+  audio.addEventListener('play', () => {
+    if (!audioNotificationsEnabled) return;
+
+    const now = Date.now();
+    // Only notify if more than 2 seconds since last notification
+    if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
+      ipcRenderer.send('notification', 'New Notification', {
+        body: 'You have a new notification',
+      });
+      lastNotifiedSoundTime = now;
+      lastNotificationTime = now;
+    }
+  });
+
+  return audio;
+};
+
+// Monitor existing and new audio elements in the DOM
+const setupAudioMonitoring = () => {
+  const handleAudioPlay = () => {
+    if (!audioNotificationsEnabled) return;
+
+    const now = Date.now();
+    if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
+      ipcRenderer.send('notification', 'New Notification', {
+        body: 'You have a new notification',
+      });
+      lastNotifiedSoundTime = now;
+      lastNotificationTime = now;
+    }
+  };
+
+  // Monitor existing audio elements
+  document.querySelectorAll('audio').forEach((audio) => {
+    audio.addEventListener('play', handleAudioPlay);
+  });
+
+  // Watch for new audio elements being added to DOM
+  const audioObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeName === 'AUDIO') {
+          (node as HTMLAudioElement).addEventListener('play', handleAudioPlay);
+        } else if ((node as Element).querySelector?.('audio')) {
+          (node as Element).querySelectorAll('audio').forEach((audio) => {
+            audio.addEventListener('play', handleAudioPlay);
+          });
+        }
+      });
+    });
+  });
+
+  audioObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+};
+
+// Setup when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupAudioMonitoring);
+} else {
+  setupAudioMonitoring();
+}
+
+// Monitor Web Audio API
+if (window.AudioContext || (window as any).webkitAudioContext) {
+  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+  const originalCreateBufferSource = AudioContext.prototype.createBufferSource;
+
+  AudioContext.prototype.createBufferSource = function() {
+    const source = originalCreateBufferSource.call(this);
+    const originalStart = source.start;
+
+    source.start = function(when?: number, offset?: number, duration?: number) {
+      if (audioNotificationsEnabled) {
+        const now = Date.now();
+        if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
+          ipcRenderer.send('notification', 'Notification', {
+            body: 'You have a new message',
+          });
+          lastNotifiedSoundTime = now;
+          lastNotificationTime = now;
+        }
+      }
+      return originalStart.call(this, when, offset, duration);
+    };
+
+    return source;
+  };
+}
+
 setDisplayMediaPromise();
 
 ipcRenderer.on('params', (event, message: string) => {
   log.debug('ipcRenderer.params', { event, message });
-  const appArgs: unknown = JSON.parse(message) as OutputOptions;
-  log.info('nativefier.json', appArgs);
+  const windowOptions: unknown = JSON.parse(message) as WindowOptions;
+  log.info('nativefier.json', windowOptions);
+
+  // Update audio notifications setting from window options
+  if (windowOptions && typeof windowOptions === 'object' && 'audioNotifications' in windowOptions) {
+    audioNotificationsEnabled = (windowOptions as any).audioNotifications !== false;
+  }
 });
 
 ipcRenderer.on('debug', (event, message: string) => {

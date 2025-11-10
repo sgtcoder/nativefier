@@ -23,6 +23,7 @@ export interface AppOptions {
   nativefier: {
     accessibilityPrompt: boolean;
     alwaysOnTop: boolean;
+    audioNotifications?: boolean;
     backgroundColor?: string;
     basicAuthPassword?: string;
     basicAuthUsername?: string;
@@ -131,6 +132,7 @@ export type PackageJSON = {
 export type RawOptions = {
   accessibilityPrompt?: boolean;
   alwaysOnTop?: boolean;
+  audioNotifications?: boolean;
   appCopyright?: string;
   appVersion?: string;
   arch?: string;
@@ -207,6 +209,7 @@ export type RawOptions = {
 };
 
 export type WindowOptions = {
+  audioNotifications?: boolean;
   autoHideMenuBar: boolean;
   blockExternalUrls: boolean;
   browserwindowOptions?: BrowserWindowOptions;

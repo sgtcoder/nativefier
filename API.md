@@ -40,8 +40,9 @@
     - [[show-menu-bar]](#show-menu-bar)
     - [[single-instance]](#single-instance)
     - [[title-bar-style]](#title-bar-style)
-    - [[tray]](#tray)
-    - [[width]](#width)
+  - [[tray]](#tray)
+  - [[audio-notifications]](#audio-notifications)
+  - [[width]](#width)
     - [[x]](#x)
     - [[y]](#y)
     - [[zoom]](#zoom)
@@ -516,6 +517,17 @@ When the optional argument `start-in-tray` is provided, i.e. the application is 
 
 Limitation: when creating a macOS app using option `--tray`, from a non-macOS build machine, the tray icon (in the menu bar) will be invisible.
 
+#### [audio-notifications]
+
+```
+--audio-notifications
+--no-audio-notifications
+```
+
+Enable or disable notifications triggered by audio playback detection. When enabled (default), the app will show native notifications when it detects audio playback (useful for messaging apps that play notification sounds). When disabled, audio-based notifications will not be shown, but standard web notifications will still work.
+
+Default: `true` (enabled)
+
 #### [width]
 
 ```
@@ -811,7 +823,6 @@ If you think this list is missing a login page that you think should be internal
 ```
 
 Disables base domain matching when determining if a link is internal.  Only the `--internal-urls` regex and login pages will be matched against, so `app.foo.com` will be external to `www.foo.com` unless it matches the `--internal-urls` regex.
-
 
 #### [proxy-rules]
 
