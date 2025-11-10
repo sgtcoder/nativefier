@@ -63,3 +63,8 @@ nativefier*.tgz
 
 tsconfig.tsbuildinfo
 scripts
+
+# Built apps/Other
+output-apps/
+*.code-workspace
+*.sh
