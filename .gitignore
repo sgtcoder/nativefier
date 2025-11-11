@@ -68,3 +68,4 @@ scripts
 output-apps/
 *.code-workspace
 *.sh
+.vscode/sessions.json
