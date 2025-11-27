@@ -30,79 +30,199 @@ const log = console; // since we can't have `loglevel` here in preload
 export const INJECT_DIR = path.join(__dirname, '..', 'inject');
 
 /**
- * Patches window.Notification to:
- * - set a callback on a new Notification
- * - set a callback for clicks on notifications
- * @param createCallback
- * @param clickCallback
+ * Native notification bridge allowing renderer-level Notification APIs
+ * to be routed through the main process (so we get true OS notifications
+ * and can surface click / close / reply callbacks).
  */
+type NotificationEventName = 'click' | 'close' | 'reply';
+
+type NotificationListenerMap = Record<NotificationEventName, Set<EventListener>>;
+
+interface RendererNotificationRecord {
+  instance: NativefierNotification;
+  listeners: NotificationListenerMap;
+}
+
+const rendererNotifications = new Map<number, RendererNotificationRecord>();
+let notificationCounter = 1;
 // Shared notification tracking (used by both FB notifications and title monitoring)
 let lastNotificationTime = 0;
+let lastWebNotification: { title: string; time: number } | null = null;
 
-function setNotificationCallback(
-  createCallback: {
-    (title: string, opt: NotificationOptions): void;
-    (...args: unknown[]): void;
-  },
-  clickCallback: { (): void; (this: Notification, ev: Event): unknown },
+function normalizeNotificationContent(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    'props' in value &&
+    value.props &&
+    typeof (value as { props?: unknown }).props === 'object'
+  ) {
+    const props = (value as { props: { content?: unknown } }).props;
+    if (Array.isArray(props.content)) {
+      return props.content
+        .map((contentPiece) => normalizeNotificationContent(contentPiece) ?? '')
+        .join('')
+        .trim();
+    }
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+class NativefierNotification {
+  public onclick: ((event: Event) => void) | null = null;
+  public onclose: ((event: Event) => void) | null = null;
+  public onreply: ((event: CustomEvent<{ reply?: string }>) => void) | null =
+    null;
+  public readonly body?: string;
+  public readonly data?: unknown;
+  public readonly icon?: string;
+  public readonly silent?: boolean;
+  public readonly tag?: string;
+  public readonly title: string;
+  private readonly id: number;
+
+  constructor(title: string, options: NotificationOptions = {}) {
+    this.id = notificationCounter++;
+  const normalizedTitle =
+    normalizeNotificationContent(title) ?? String(title ?? '');
+    const normalizedBody = normalizeNotificationContent(options.body);
+
+    this.title = normalizedTitle;
+    this.body = normalizedBody;
+    this.data = options.data;
+    this.icon = options.icon as string | undefined;
+    this.silent =
+      typeof options.silent === 'boolean' ? options.silent : undefined;
+    this.tag = options.tag;
+
+    rendererNotifications.set(this.id, {
+      instance: this,
+      listeners: {
+        click: new Set<EventListener>(),
+        close: new Set<EventListener>(),
+        reply: new Set<EventListener>(),
+      },
+    });
+
+    const now = Date.now();
+    const shouldSend =
+      !lastWebNotification ||
+      lastWebNotification.title !== normalizedTitle ||
+      now - lastWebNotification.time >= 1000;
+
+    if (shouldSend) {
+      lastWebNotification = { title: normalizedTitle, time: now };
+      lastNotificationTime = now;
+      ipcRenderer.send('notification', {
+        id: this.id,
+        title: normalizedTitle,
+        options: {
+          ...options,
+          body: normalizedBody,
+        },
+      });
+    }
+  }
+
+  close(): void {
+    ipcRenderer.send('notification-close', { id: this.id });
+    emitNotificationEvent(this.id, 'close');
+  }
+
+  addEventListener(event: string, handler: EventListener): void {
+    const record = rendererNotifications.get(this.id);
+    const listenerSet = record?.listeners[event as NotificationEventName];
+    listenerSet?.add(handler);
+  }
+
+  removeEventListener(event: string, handler: EventListener): void {
+    const record = rendererNotifications.get(this.id);
+    const listenerSet = record?.listeners[event as NotificationEventName];
+    listenerSet?.delete(handler);
+  }
+
+  dispatchEvent(event: Event): boolean {
+    emitNotificationEvent(this.id, event.type as NotificationEventName, event);
+    return true;
+  }
+
+  static requestPermission(): Promise<NotificationPermission> {
+    return Promise.resolve('granted');
+  }
+
+  static get permission(): NotificationPermission {
+    return 'granted';
+  }
+}
+
+function emitNotificationEvent(
+  id: number,
+  eventName: NotificationEventName,
+  existingEvent?: Event,
+  detail?: { reply?: string },
 ): void {
-  const OldNotify = window.Notification;
-
-  if (!OldNotify) {
-    log.error('setNotificationCallback: window.Notification is not available!');
+  const record = rendererNotifications.get(id);
+  if (!record) {
     return;
   }
 
-  // Track last web notification to prevent duplicates
-  let lastWebNotification: { title: string; time: number } | null = null;
+  const event =
+    existingEvent ??
+    (eventName === 'reply'
+      ? (new CustomEvent('reply', { detail }) as Event)
+      : new Event(eventName));
 
-  const newNotify = function (
-    title: string,
-    opt: NotificationOptions,
-  ): Notification {
-    const now = Date.now();
+  const handler =
+    eventName === 'click'
+      ? record.instance.onclick
+      : eventName === 'close'
+        ? record.instance.onclose
+        : record.instance.onreply;
+  handler?.(event as CustomEvent<{ reply?: string }>);
 
-    // Deduplicate: only send if different from last notification or more than 1 second ago
-    if (lastWebNotification &&
-        lastWebNotification.title === title &&
-        now - lastWebNotification.time < 1000) {
-      // Skip duplicate
-    } else {
-      lastWebNotification = { title, time: now };
-      lastNotificationTime = now;
-      createCallback(title, opt);
+  record.listeners[eventName].forEach((listener) => {
+    try {
+      listener(event);
+    } catch (err) {
+      log.error('Notification listener error', err);
     }
-
-    // Return a fake notification object so the website doesn't break
-    // (we're showing the notification through the main process instead)
-    const fakeNotification = {
-      close: () => {},
-      addEventListener: (event: string, handler: EventListener) => {
-        if (event === 'click') {
-          // Store click handler to call when notification is clicked
-          (fakeNotification as any)._clickHandler = handler;
-        }
-      },
-      removeEventListener: () => {},
-      dispatchEvent: () => true,
-    } as unknown as Notification;
-
-    return fakeNotification;
-  };
-
-  // Force permission to always be 'granted' to override Chrome's notification settings
-  newNotify.requestPermission = () => {
-    return Promise.resolve('granted' as NotificationPermission);
-  };
-  Object.defineProperty(newNotify, 'permission', {
-    get: () => {
-      return 'granted' as NotificationPermission;
-    },
   });
 
-  // @ts-expect-error TypeScript says its not compatible, but it works?
-  window.Notification = newNotify;
+  if (eventName === 'close') {
+    rendererNotifications.delete(id);
+  }
 }
+
+function overrideNotification(): void {
+  if (!window.Notification) {
+    log.error('Notification is not available in this renderer');
+    return;
+  }
+
+  // @ts-expect-error assignment between different constructor signatures
+  window.Notification = NativefierNotification;
+  Object.assign(window, { notification: NativefierNotification });
+}
+
+overrideNotification();
+
+ipcRenderer.on(
+  'notification-event',
+  (_event, payload: { id: number; event: NotificationEventName; reply?: string }) => {
+    emitNotificationEvent(payload.id, payload.event, undefined, {
+      reply: payload.reply,
+    });
+  },
+);
 
 async function getDisplayMedia(
   sourceId: number | string,
@@ -355,23 +475,9 @@ function injectScripts(): void {
   }
 }
 
-function notifyNotificationCreate(
-  title: string,
-  opt: NotificationOptions,
-): void {
-  ipcRenderer.send('notification', title, opt);
-}
-
-function notifyNotificationClick(): void {
-  ipcRenderer.send('notification-click');
-}
-
-// @ts-expect-error TypeScript thinks these are incompatible but they aren't
-setNotificationCallback(notifyNotificationCreate, notifyNotificationClick);
-
 // Detect when Facebook plays a notification sound
 let lastNotifiedSoundTime = 0;
-let audioNotificationsEnabled = true; // Default to enabled
+let audioNotificationsEnabled = false; // Default to disabled; opt-in via flag
 
 // Intercept Audio constructor to detect sound playback
 const OriginalAudio = window.Audio;
@@ -384,7 +490,7 @@ const OriginalAudio = window.Audio;
     const now = Date.now();
     // Only notify if more than 2 seconds since last notification
     if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
-      ipcRenderer.send('notification', 'New Notification', {
+      new window.Notification('New Notification', {
         body: 'You have a new notification',
       });
       lastNotifiedSoundTime = now;
@@ -402,7 +508,7 @@ const setupAudioMonitoring = () => {
 
     const now = Date.now();
     if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
-      ipcRenderer.send('notification', 'New Notification', {
+      new window.Notification('New Notification', {
         body: 'You have a new notification',
       });
       lastNotifiedSoundTime = now;
@@ -456,7 +562,7 @@ if (window.AudioContext || (window as any).webkitAudioContext) {
       if (audioNotificationsEnabled) {
         const now = Date.now();
         if ((now - lastNotificationTime) > 2000 && (now - lastNotifiedSoundTime) > 1000) {
-          ipcRenderer.send('notification', 'Notification', {
+          new window.Notification('Notification', {
             body: 'You have a new message',
           });
           lastNotifiedSoundTime = now;
@@ -478,8 +584,14 @@ ipcRenderer.on('params', (event, message: string) => {
   log.info('nativefier.json', windowOptions);
 
   // Update audio notifications setting from window options
-  if (windowOptions && typeof windowOptions === 'object' && 'audioNotifications' in windowOptions) {
-    audioNotificationsEnabled = (windowOptions as any).audioNotifications !== false;
+  if (
+    windowOptions &&
+    typeof windowOptions === 'object' &&
+    'audioNotifications' in windowOptions
+  ) {
+    audioNotificationsEnabled = Boolean(
+      (windowOptions as Record<string, unknown>).audioNotifications,
+    );
   }
 });
 

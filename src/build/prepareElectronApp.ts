@@ -20,6 +20,7 @@ function pickElectronAppArgs(options: AppOptions): OutputOptions {
   return {
     accessibilityPrompt: options.nativefier.accessibilityPrompt,
     alwaysOnTop: options.nativefier.alwaysOnTop,
+    audioNotifications: options.nativefier.audioNotifications,
     appBundleId: options.packager.appBundleId,
     appCategoryType: options.packager.appCategoryType,
     appCopyright: options.packager.appCopyright,

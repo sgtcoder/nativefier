@@ -35,6 +35,10 @@ import {
 
 export const APP_ARGS_FILE_PATH = path.join(__dirname, '..', 'nativefier.json');
 
+type NotificationEventName = 'click' | 'close' | 'reply';
+
+const activeNativeNotifications = new Map<number, Notification>();
+
 type SessionInteractionRequest = {
   id?: string;
   func?: string;
@@ -146,13 +150,6 @@ export async function createMainWindow(
     setupNotificationBadge(options, mainWindow, setDockBadge);
   }
 
-  ipcMain.on('notification-click', () => {
-    log.debug('notification-click');
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.restore();
-  });
-
   setupSessionInteraction(mainWindow);
   setupSessionPermissionHandler(mainWindow);
 
@@ -256,43 +253,170 @@ function setupNotificationBadge(
   const listenerCount = ipcMain.listenerCount('notification');
   log.info(`Removing ${listenerCount} existing notification listeners`);
   ipcMain.removeAllListeners('notification');
+  ipcMain.removeAllListeners('notification-close');
 
-  ipcMain.on('notification', (event, title: string, opt: NotificationOptions) => {
-    log.info('notification received', { title, body: opt?.body, listenerCount: ipcMain.listenerCount('notification') });
-
-    // Show native notification on Linux/Windows
-    if (!isOSX() && Notification.isSupported()) {
-      try {
-        const notification = new Notification({
-          title: title || options.name || 'Notification',
-          body: opt?.body || '',
-          icon: opt?.icon || getAppIcon(),
-          silent: opt?.silent || false,
-        });
-
-        notification.on('click', () => {
-          log.debug('notification.click');
-          window.show();
-          window.focus();
-        });
-
-        notification.show();
-      } catch (err) {
-        log.error('Failed to show notification:', err);
-      }
+  ipcMain.on('notification-close', (_event, payload) => {
+    const id = extractNotificationId(payload);
+    if (id === undefined) {
       return;
     }
-
-    // macOS dock badge
-    if (isOSX() && !window.isFocused()) {
-      setDockBadge('•', options.bounce);
-    }
+    const nativeNotification = activeNativeNotifications.get(id);
+    nativeNotification?.close();
   });
+
+  ipcMain.on(
+    'notification',
+    (event, rawPayload: unknown, legacyOptions?: NotificationOptions) => {
+      const normalized = normalizeRendererNotificationPayload(
+        rawPayload,
+        legacyOptions,
+      );
+      if (!normalized) {
+        log.warn('Ignoring invalid notification payload', rawPayload);
+        return;
+      }
+
+      log.info('notification received', {
+        title: normalized.title,
+        body: normalized.options?.body,
+        listenerCount: ipcMain.listenerCount('notification'),
+      });
+
+      if (!isOSX() && Notification.isSupported()) {
+        showNativeNotification(
+          window,
+          normalized.id,
+          normalized.title || options.name || 'Notification',
+          normalized.options ?? {},
+          options,
+        );
+        return;
+      }
+
+      // macOS dock badge
+      if (isOSX() && !window.isFocused()) {
+        setDockBadge('•', options.bounce);
+      }
+    },
+  );
 
   window.on('focus', () => {
     log.debug('mainWindow.focus');
     setDockBadge('');
   });
+}
+
+type NormalizedNotificationPayload = {
+  id?: number;
+  title: string;
+  options: NotificationOptions;
+};
+
+function normalizeRendererNotificationPayload(
+  rawPayload: unknown,
+  legacyOptions?: NotificationOptions,
+): NormalizedNotificationPayload | null {
+  if (typeof rawPayload === 'string') {
+    return {
+      title: rawPayload,
+      options: legacyOptions ?? {},
+    };
+  }
+
+  if (
+    rawPayload &&
+    typeof rawPayload === 'object' &&
+    'title' in rawPayload &&
+    typeof (rawPayload as { title?: unknown }).title === 'string'
+  ) {
+    const payload = rawPayload as {
+      id?: number;
+      title: string;
+      options?: NotificationOptions;
+    };
+    return {
+      id: payload.id,
+      title: payload.title,
+      options: payload.options ?? {},
+    };
+  }
+
+  return null;
+}
+
+function extractNotificationId(payload: unknown): number | undefined {
+  if (typeof payload === 'number') {
+    return payload;
+  }
+
+  if (payload && typeof payload === 'object') {
+    const candidate = (payload as { id?: unknown }).id;
+    if (typeof candidate === 'number') {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function showNativeNotification(
+  window: BrowserWindow,
+  rendererNotificationId: number | undefined,
+  title: string,
+  notificationOptions: NotificationOptions,
+  buildOptions: OutputOptions,
+): void {
+  try {
+    const electronNotification = new Notification({
+      title: title || buildOptions.name || 'Notification',
+      body: notificationOptions.body ?? '',
+      icon: (notificationOptions.icon as string | undefined) || getAppIcon(),
+      silent: notificationOptions.silent ?? false,
+    });
+
+    if (typeof rendererNotificationId === 'number') {
+      activeNativeNotifications.set(
+        rendererNotificationId,
+        electronNotification,
+      );
+    }
+
+    electronNotification.on('click', () => {
+      log.debug('notification.click');
+      window.show();
+      window.focus();
+      window.restore();
+      if (typeof rendererNotificationId === 'number') {
+        sendRendererNotificationEvent(window, rendererNotificationId, 'click');
+      }
+    });
+
+    electronNotification.on('close', () => {
+      if (typeof rendererNotificationId === 'number') {
+        activeNativeNotifications.delete(rendererNotificationId);
+        sendRendererNotificationEvent(window, rendererNotificationId, 'close');
+      }
+    });
+
+    electronNotification.on('reply', (_event, reply) => {
+      if (typeof rendererNotificationId === 'number') {
+        sendRendererNotificationEvent(window, rendererNotificationId, 'reply', reply);
+      }
+    });
+
+    electronNotification.show();
+  } catch (err) {
+    log.error('Failed to show notification:', err);
+  }
+}
+
+function sendRendererNotificationEvent(
+  window: BrowserWindow,
+  id: number,
+  event: NotificationEventName,
+  reply?: string,
+): void {
+  window.webContents.send('notification-event', { id, event, reply });
 }
 
 function setupSessionInteraction(window: BrowserWindow): void {

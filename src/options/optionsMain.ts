@@ -69,7 +69,7 @@ export async function getOptions(rawOptions: RawOptions): Promise<AppOptions> {
     nativefier: {
       accessibilityPrompt: true,
       alwaysOnTop: rawOptions.alwaysOnTop ?? false,
-      audioNotifications: rawOptions.audioNotifications ?? true,
+      audioNotifications: rawOptions.audioNotifications ?? false,
       backgroundColor: rawOptions.backgroundColor,
       basicAuthPassword: rawOptions.basicAuthPassword,
       basicAuthUsername: rawOptions.basicAuthUsername,

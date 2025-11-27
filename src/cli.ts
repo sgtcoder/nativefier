@@ -281,8 +281,9 @@ export async function initArgs(
       choices: ['true', 'false', 'start-in-tray'],
     })
     .option('audio-notifications', {
-      default: true,
-      description: 'enable notifications triggered by audio playback (default: true)',
+      default: false,
+      description:
+        'enable notifications triggered by audio playback (default: disabled)',
       type: 'boolean',
     })
     .option('width', {

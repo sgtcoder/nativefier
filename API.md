@@ -526,7 +526,7 @@ Limitation: when creating a macOS app using option `--tray`, from a non-macOS bu
 
 Enable or disable notifications triggered by audio playback detection. When enabled (default), the app will show native notifications when it detects audio playback (useful for messaging apps that play notification sounds). When disabled, audio-based notifications will not be shown, but standard web notifications will still work.
 
-Default: `true` (enabled)
+Default: `false` (disabled)
 
 #### [width]
 
