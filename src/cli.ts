@@ -3,7 +3,7 @@ import 'source-map-support/register';
 
 import electronPackager = require('electron-packager');
 import * as log from 'loglevel';
-import yargs from 'yargs';
+import type * as Yargs from 'yargs';
 
 import { DEFAULT_ELECTRON_VERSION } from './constants';
 import {
@@ -17,6 +17,33 @@ import { buildNativefierApp } from './main';
 import { RawOptions } from '../shared/src/options/model';
 import { parseJson } from './utils/parseUtils';
 
+type YargsFactory = typeof import('yargs').default;
+
+const nativeDynamicImport = new Function(
+  'specifier',
+  'return import(specifier);',
+) as <T>(specifier: string) => Promise<T>;
+
+let cachedYargsFactory: YargsFactory | undefined;
+
+async function getYargsFactory(): Promise<YargsFactory> {
+  if (!cachedYargsFactory) {
+    const module = (await nativeDynamicImport<typeof import('yargs')>(
+      'yargs',
+    )) as typeof import('yargs');
+    cachedYargsFactory = module.default;
+  }
+  return cachedYargsFactory;
+}
+
+function getTerminalWidth(): number {
+  const width = process.stdout?.columns;
+  if (typeof width === 'number' && width > 0) {
+    return width;
+  }
+  return 120;
+}
+
 // @types/yargs@17.x started pretending yargs.argv can be a promise:
 // https://github.com/DefinitelyTyped/DefinitelyTyped/blob/8e17f9ca957a06040badb53ae7688fbb74229ccf/types/yargs/index.d.ts#L73
 // Dunno in which case it happens, but it doesn't for us! So, having to await
@@ -25,14 +52,17 @@ import { parseJson } from './utils/parseUtils';
 // to have a *non*-promise type. Maybe that's wrong. If it is, this type should
 // be dropped, and extra async-ness should be added where needed.
 type YargsArgvSync<T> = {
-  [key in keyof yargs.Arguments<T> as
+  [key in keyof Yargs.Arguments<T> as
     | key
-    | yargs.CamelCaseKey<key>]: yargs.Arguments<T>[key];
+    | Yargs.CamelCaseKey<key>]: Yargs.Arguments<T>[key];
 };
 
-export function initArgs(argv: string[]): yargs.Argv<RawOptions> {
+export async function initArgs(
+  argv: string[],
+): Promise<Yargs.Argv<RawOptions>> {
   const sanitizedArgs = sanitizeArgs(argv);
-  const args = yargs(sanitizedArgs)
+  const yargsFactory = await getYargsFactory();
+  const args = yargsFactory(sanitizedArgs)
     .scriptName('nativefier')
     .usage(
       '$0 <targetUrl> [outputDirectory] [other options]\nor\n$0 --upgrade <pathToExistingApp> [other options]',
@@ -547,20 +577,20 @@ export function initArgs(argv: string[]): yargs.Argv<RawOptions> {
     .version()
     .help()
     .group(['version', 'help'], 'Other Options')
-    .wrap(yargs.terminalWidth());
+    .wrap(getTerminalWidth());
 
   // We must access argv in order to get yargs to actually process args
   // Do this now to go ahead and get any errors out of the way
   args.argv as YargsArgvSync<RawOptions>;
 
-  return args as yargs.Argv<RawOptions>;
+  return args as Yargs.Argv<RawOptions>;
 }
 
 function decorateYargOptionGroup(value: string): string {
   return `====== ${value} ======`;
 }
 
-export function parseArgs(args: yargs.Argv<RawOptions>): RawOptions {
+export function parseArgs(args: Yargs.Argv<RawOptions>): RawOptions {
   const parsed = { ...(args.argv as YargsArgvSync<RawOptions>) };
   // In yargs, the _ property of the parsed args is an array of the positional args
   // https://github.com/yargs/yargs/blob/master/docs/examples.md#and-non-hyphenated-options-too-just-use-argv_
@@ -657,54 +687,56 @@ function sanitizeArgs(argv: string[]): string[] {
 }
 
 if (require.main === module) {
-  let args: yargs.Argv<RawOptions> | undefined = undefined;
-  let parsedArgs: RawOptions;
-  try {
-    args = initArgs(process.argv.slice(2));
-    parsedArgs = parseArgs(args);
-  } catch (err: unknown) {
-    if (args) {
-      log.error(err);
-      args.showHelp();
-    } else {
-      log.error('Failed to parse command-line arguments. Aborting.', err);
-    }
-    process.exit(1);
-  }
-
-  const options: RawOptions = {
-    ...parsedArgs,
-  };
-
-  if (options.verbose) {
-    log.setLevel('trace');
+  (async () => {
+    let args: Yargs.Argv<RawOptions> | undefined = undefined;
+    let parsedArgs: RawOptions;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      require('debug').enable('electron-packager');
+      args = await initArgs(process.argv.slice(2));
+      parsedArgs = parseArgs(args);
     } catch (err: unknown) {
-      log.debug(
-        'Failed to enable electron-packager debug output. This should not happen,',
-        'and suggests their internals changed. Please report an issue.',
-      );
+      if (args) {
+        log.error(err);
+        args.showHelp();
+      } else {
+        log.error('Failed to parse command-line arguments. Aborting.', err);
+      }
+      process.exit(1);
     }
 
-    log.debug(
-      'Running in verbose mode! This will produce a mountain of logs and',
-      'is recommended only for troubleshooting or if you like Shakespeare.',
-    );
-  } else if (options.quiet) {
-    log.setLevel('silent');
-  } else {
-    log.setLevel('info');
-  }
+    const options: RawOptions = {
+      ...parsedArgs,
+    };
 
-  checkInternet();
+    if (options.verbose) {
+      log.setLevel('trace');
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+        require('debug').enable('electron-packager');
+      } catch (err: unknown) {
+        log.debug(
+          'Failed to enable electron-packager debug output. This should not happen,',
+          'and suggests their internals changed. Please report an issue.',
+        );
+      }
 
-  if (!options.out && process.env.NATIVEFIER_APPS_DIR) {
-    options.out = process.env.NATIVEFIER_APPS_DIR;
-  }
+      log.debug(
+        'Running in verbose mode! This will produce a mountain of logs and',
+        'is recommended only for troubleshooting or if you like Shakespeare.',
+      );
+    } else if (options.quiet) {
+      log.setLevel('silent');
+    } else {
+      log.setLevel('info');
+    }
 
-  buildNativefierApp(options).catch((error) => {
-    log.error('Error during build. Run with --verbose for details.', error);
-  });
+    checkInternet();
+
+    if (!options.out && process.env.NATIVEFIER_APPS_DIR) {
+      options.out = process.env.NATIVEFIER_APPS_DIR;
+    }
+
+    buildNativefierApp(options).catch((error) => {
+      log.error('Error during build. Run with --verbose for details.', error);
+    });
+  })();
 }

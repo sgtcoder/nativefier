@@ -3,6 +3,10 @@ import 'source-map-support/register';
 import { initArgs, parseArgs } from './cli';
 import { parseJson } from './utils/parseUtils';
 
+async function initAndParse(argv: string[]) {
+  return parseArgs(await initArgs(argv));
+}
+
 describe('initArgs + parseArgs', () => {
   let mockExit: jest.SpyInstance;
 
@@ -14,75 +18,71 @@ describe('initArgs + parseArgs', () => {
     mockExit.mockRestore();
   });
 
-  test('--help forces exit', () => {
+  test('--help forces exit', async () => {
     // Mock console.log to not pollute the log with the yargs help text
     const mockLog = jest.spyOn(console, 'log').mockImplementation();
-    initArgs(['https://www.google.com', '--help']);
+    await initArgs(['https://www.google.com', '--help']);
     expect(mockExit).toHaveBeenCalledTimes(1);
-    expect(mockLog).toBeCalled();
+    expect(mockLog).toHaveBeenCalled();
     mockLog.mockRestore();
   });
 
-  test('--version forces exit', () => {
+  test('--version forces exit', async () => {
     // Mock console.log to not pollute the log with the yargs help text
     const mockLog = jest.spyOn(console, 'log').mockImplementation();
-    initArgs(['https://www.google.com', '--version']);
+    await initArgs(['https://www.google.com', '--version']);
     expect(mockExit).toHaveBeenCalledTimes(1);
-    expect(mockLog).toBeCalled();
+    expect(mockLog).toHaveBeenCalled();
     mockLog.mockRestore();
   });
 
   // Positional options
 
-  test('first positional becomes targetUrl', () => {
-    const args = parseArgs(initArgs(['https://google.com']));
+  test('first positional becomes targetUrl', async () => {
+    const args = await initAndParse(['https://google.com']);
     expect(args.targetUrl).toBe('https://google.com');
     expect(args.upgrade).toBeUndefined();
   });
 
-  test('second positional becomes out', () => {
-    const args = parseArgs(initArgs(['https://google.com', 'tmp']));
+  test('second positional becomes out', async () => {
+    const args = await initAndParse(['https://google.com', 'tmp']);
     expect(args.out).toBe('tmp');
     expect(args.targetUrl).toBe('https://google.com');
     expect(args.upgrade).toBeUndefined();
   });
 
   // App Creation Options
-  test('upgrade arg', () => {
-    const args = parseArgs(initArgs(['--upgrade', 'pathToUpgrade']));
+  test('upgrade arg', async () => {
+    const args = await initAndParse(['--upgrade', 'pathToUpgrade']);
     expect(args.upgrade).toBe('pathToUpgrade');
     expect(args.targetUrl).toBeUndefined();
   });
 
-  test('upgrade arg with out dir', () => {
-    const args = parseArgs(initArgs(['tmp', '--upgrade', 'pathToUpgrade']));
+  test('upgrade arg with out dir', async () => {
+    const args = await initAndParse(['tmp', '--upgrade', 'pathToUpgrade']);
     expect(args.upgrade).toBe('pathToUpgrade');
     expect(args.out).toBe('tmp');
     expect(args.targetUrl).toBeUndefined();
   });
 
-  test('upgrade arg with targetUrl', () => {
-    expect(() =>
-      parseArgs(
-        initArgs(['https://www.google.com', '--upgrade', 'path/to/upgrade']),
-      ),
-    ).toThrow();
+  test('upgrade arg with targetUrl', async () => {
+    await expect(
+      initAndParse(['https://www.google.com', '--upgrade', 'path/to/upgrade']),
+    ).rejects.toThrow();
   });
 
-  test('multi-inject', () => {
-    const args = parseArgs(
-      initArgs([
-        'https://google.com',
-        '--inject',
-        'test.js',
-        '--inject',
-        'test2.js',
-        '--inject',
-        'test.css',
-        '--inject',
-        'test2.css',
-      ]),
-    );
+  test('multi-inject', async () => {
+    const args = await initAndParse([
+      'https://google.com',
+      '--inject',
+      'test.js',
+      '--inject',
+      'test2.js',
+      '--inject',
+      'test.css',
+      '--inject',
+      'test2.css',
+    ]);
     expect(args.inject).toEqual([
       'test.js',
       'test2.js',
@@ -138,27 +138,35 @@ describe('initArgs + parseArgs', () => {
       value: '{"ProductName": "Google"}',
       isJsonString: true,
     },
-  ])('test string arg %s', ({ arg, shortArg, value, isJsonString }) => {
-    const args = parseArgs(
-      initArgs(['https://google.com', `--${arg}`, value]),
-    ) as unknown as Record<string, string>;
-    if (!isJsonString) {
-      expect(args[arg]).toBe(value);
-    } else {
-      expect(args[arg]).toEqual(parseJson(value));
-    }
+  ])(
+    'test string arg %s',
+    async ({ arg, shortArg, value, isJsonString }) => {
+      const args = (await initAndParse([
+        'https://google.com',
+        `--${arg}`,
+        value,
+      ])) as unknown as Record<string, string>;
 
-    if (shortArg) {
-      const argsShort = parseArgs(
-        initArgs(['https://google.com', `-${shortArg}`, value]),
-      ) as unknown as Record<string, string>;
       if (!isJsonString) {
-        expect(argsShort[arg]).toBe(value);
+        expect(args[arg]).toBe(value);
       } else {
-        expect(argsShort[arg]).toEqual(parseJson(value));
+        expect(args[arg]).toEqual(parseJson(value));
       }
-    }
-  });
+
+      if (shortArg) {
+        const argsShort = (await initAndParse([
+          'https://google.com',
+          `-${shortArg}`,
+          value,
+        ])) as unknown as Record<string, string>;
+        if (!isJsonString) {
+          expect(argsShort[arg]).toBe(value);
+        } else {
+          expect(argsShort[arg]).toEqual(parseJson(value));
+        }
+      }
+    },
+  );
 
   test.each([
     { arg: 'arch', shortArg: 'a', value: 'x64', badValue: '486' },
@@ -169,32 +177,39 @@ describe('initArgs + parseArgs', () => {
       value: 'hidden',
       badValue: 'cool',
     },
-  ])('limited choice arg %s', ({ arg, shortArg, value, badValue }) => {
-    const args = parseArgs(
-      initArgs(['https://google.com', `--${arg}`, value]),
-    ) as unknown as Record<string, string>;
-    expect(args[arg]).toBe(value);
+  ])(
+    'limited choice arg %s',
+    async ({ arg, shortArg, value, badValue }) => {
+      const args = (await initAndParse([
+        'https://google.com',
+        `--${arg}`,
+        value,
+      ])) as unknown as Record<string, string>;
+      expect(args[arg]).toBe(value);
 
-    // Mock console.error to not pollute the log with the yargs help text
-    const mockError = jest.spyOn(console, 'error').mockImplementation();
-    initArgs(['https://google.com', `--${arg}`, badValue]);
-    expect(mockExit).toHaveBeenCalledTimes(1);
-    expect(mockError).toBeCalled();
-    mockExit.mockClear();
-    mockError.mockClear();
-
-    if (shortArg) {
-      const argsShort = parseArgs(
-        initArgs(['https://google.com', `-${shortArg}`, value]),
-      ) as unknown as Record<string, string>;
-      expect(argsShort[arg]).toBe(value);
-
-      initArgs(['https://google.com', `-${shortArg}`, badValue]);
+      // Mock console.error to not pollute the log with the yargs help text
+      const mockError = jest.spyOn(console, 'error').mockImplementation();
+      await initArgs(['https://google.com', `--${arg}`, badValue]);
       expect(mockExit).toHaveBeenCalledTimes(1);
-      expect(mockError).toBeCalled();
-    }
-    mockError.mockRestore();
-  });
+      expect(mockError).toHaveBeenCalled();
+      mockExit.mockClear();
+      mockError.mockClear();
+
+      if (shortArg) {
+        const argsShort = (await initAndParse([
+          'https://google.com',
+          `-${shortArg}`,
+          value,
+        ])) as unknown as Record<string, string>;
+        expect(argsShort[arg]).toBe(value);
+
+        await initArgs(['https://google.com', `-${shortArg}`, badValue]);
+        expect(mockExit).toHaveBeenCalledTimes(1);
+        expect(mockError).toHaveBeenCalled();
+      }
+      mockError.mockRestore();
+    },
+  );
 
   test.each([
     { arg: 'always-on-top', shortArg: '' },
@@ -224,45 +239,49 @@ describe('initArgs + parseArgs', () => {
     { arg: 'strict-internal-urls', shortArg: '' },
     { arg: 'verbose', shortArg: '' },
     { arg: 'widevine', shortArg: '' },
-  ])('test boolean arg %s', ({ arg, shortArg }) => {
-    const defaultArgs = parseArgs(
-      initArgs(['https://google.com']),
-    ) as unknown as Record<string, boolean>;
+  ])('test boolean arg %s', async ({ arg, shortArg }) => {
+    const defaultArgs = (await initAndParse([
+      'https://google.com',
+    ])) as unknown as Record<string, boolean>;
     expect(defaultArgs[arg]).toBe(false);
 
-    const args = parseArgs(
-      initArgs(['https://google.com', `--${arg}`]),
-    ) as unknown as Record<string, boolean>;
+    const args = (await initAndParse([
+      'https://google.com',
+      `--${arg}`,
+    ])) as unknown as Record<string, boolean>;
     expect(args[arg]).toBe(true);
     if (shortArg) {
-      const argsShort = parseArgs(
-        initArgs(['https://google.com', `-${shortArg}`]),
-      ) as unknown as Record<string, boolean>;
+      const argsShort = (await initAndParse([
+        'https://google.com',
+        `-${shortArg}`,
+      ])) as unknown as Record<string, boolean>;
       expect(argsShort[arg]).toBe(true);
     }
   });
 
   test.each([{ arg: 'no-overwrite', shortArg: '' }])(
     'test inversible boolean arg %s',
-    ({ arg, shortArg }) => {
+    async ({ arg, shortArg }) => {
       const inverse = arg.startsWith('no-') ? arg.substr(3) : `no-${arg}`;
 
-      const defaultArgs = parseArgs(
-        initArgs(['https://google.com']),
-      ) as unknown as Record<string, boolean>;
+      const defaultArgs = (await initAndParse([
+        'https://google.com',
+      ])) as unknown as Record<string, boolean>;
       expect(defaultArgs[arg]).toBe(false);
       expect(defaultArgs[inverse]).toBe(true);
 
-      const args = parseArgs(
-        initArgs(['https://google.com', `--${arg}`]),
-      ) as unknown as Record<string, boolean>;
+      const args = (await initAndParse([
+        'https://google.com',
+        `--${arg}`,
+      ])) as unknown as Record<string, boolean>;
       expect(args[arg]).toBe(true);
       expect(args[inverse]).toBe(false);
 
       if (shortArg) {
-        const argsShort = parseArgs(
-          initArgs(['https://google.com', `-${shortArg}`]),
-        ) as unknown as Record<string, boolean>;
+        const argsShort = (await initAndParse([
+          'https://google.com',
+          `-${shortArg}`,
+        ])) as unknown as Record<string, boolean>;
         expect(argsShort[arg]).toBe(true);
         expect(argsShort[inverse]).toBe(true);
       }
@@ -279,26 +298,34 @@ describe('initArgs + parseArgs', () => {
     { arg: 'width', shortArg: '', value: 700 },
     { arg: 'x', shortArg: '', value: 800 },
     { arg: 'y', shortArg: '', value: 900 },
-  ])('test numeric arg %s', ({ arg, shortArg, value }) => {
-    const args = parseArgs(
-      initArgs(['https://google.com', `--${arg}`, `${value}`]),
-    ) as unknown as Record<string, number>;
+  ])('test numeric arg %s', async ({ arg, shortArg, value }) => {
+    const args = (await initAndParse([
+      'https://google.com',
+      `--${arg}`,
+      `${value}`,
+    ])) as unknown as Record<string, number>;
     expect(args[arg]).toBe(value);
 
-    const badArgs = parseArgs(
-      initArgs(['https://google.com', `--${arg}`, 'abcd']),
-    ) as unknown as Record<string, number>;
+    const badArgs = (await initAndParse([
+      'https://google.com',
+      `--${arg}`,
+      'abcd',
+    ])) as unknown as Record<string, number>;
     expect(badArgs[arg]).toBeNaN();
 
     if (shortArg) {
-      const shortArgs = parseArgs(
-        initArgs(['https://google.com', `-${shortArg}`, `${value}`]),
-      ) as unknown as Record<string, number>;
+      const shortArgs = (await initAndParse([
+        'https://google.com',
+        `-${shortArg}`,
+        `${value}`,
+      ])) as unknown as Record<string, number>;
       expect(shortArgs[arg]).toBe(value);
 
-      const badShortArgs = parseArgs(
-        initArgs(['https://google.com', `-${shortArg}`, 'abcd']),
-      ) as unknown as Record<string, number>;
+      const badShortArgs = (await initAndParse([
+        'https://google.com',
+        `-${shortArg}`,
+        'abcd',
+      ])) as unknown as Record<string, number>;
       expect(badShortArgs[arg]).toBeNaN();
     }
   });
@@ -308,10 +335,12 @@ describe('initArgs + parseArgs', () => {
     { arg: 'tray', value: 'false' },
     { arg: 'tray', value: 'start-in-tray' },
     { arg: 'tray', value: '' },
-  ])('test tray valyue %s', ({ arg, value }) => {
-    const args = parseArgs(
-      initArgs(['https://google.com', `--${arg}`, `${value}`]),
-    ) as unknown as Record<string, number>;
+  ])('test tray valyue %s', async ({ arg, value }) => {
+    const args = (await initAndParse([
+      'https://google.com',
+      `--${arg}`,
+      `${value}`,
+    ])) as unknown as Record<string, number>;
     if (value !== '') {
       expect(args[arg]).toBe(value);
     } else {
@@ -319,8 +348,8 @@ describe('initArgs + parseArgs', () => {
     }
   });
 
-  test('test tray value defaults to false', () => {
-    const args = parseArgs(initArgs(['https://google.com']));
+  test('test tray value defaults to false', async () => {
+    const args = await initAndParse(['https://google.com']);
     expect(args.tray).toBe('false');
   });
 });
