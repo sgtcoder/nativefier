@@ -99,9 +99,9 @@
       }
     },
     "node_modules/@types/node": {
-      "version": "22.19.15",
-      "resolved": "https://registry.npmjs.org/@types/node/-/node-22.19.15.tgz",
-      "integrity": "sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==",
+      "version": "22.19.17",
+      "resolved": "https://registry.npmjs.org/@types/node/-/node-22.19.17.tgz",
+      "integrity": "sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==",
       "dev": true,
       "license": "MIT",
       "dependencies": {
@@ -340,9 +340,9 @@
       "optional": true
     },
     "node_modules/electron": {
-      "version": "39.8.5",
-      "resolved": "https://registry.npmjs.org/electron/-/electron-39.8.5.tgz",
-      "integrity": "sha512-q6+LiQIcTadSyvtPgLDQkCtVA9jQJXQVMrQcctfOJILh6OFMN+UJJLRkuUTy8CZDYeCIBn1ZycqsL1dAXugxZA==",
+      "version": "39.8.6",
+      "resolved": "https://registry.npmjs.org/electron/-/electron-39.8.6.tgz",
+      "integrity": "sha512-uWX6Jh5LmwL13VwOSKBjebI+ck+03GOwc8V2Sgbmr9pJVJ/cHfli/PkjXuRDr+hq+SLHQuT9mGHSIfScebApRA==",
       "dev": true,
       "hasInstallScript": true,
       "license": "MIT",
