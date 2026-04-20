@@ -340,9 +340,9 @@
       "optional": true
     },
     "node_modules/electron": {
-      "version": "39.8.6",
-      "resolved": "https://registry.npmjs.org/electron/-/electron-39.8.6.tgz",
-      "integrity": "sha512-uWX6Jh5LmwL13VwOSKBjebI+ck+03GOwc8V2Sgbmr9pJVJ/cHfli/PkjXuRDr+hq+SLHQuT9mGHSIfScebApRA==",
+      "version": "39.8.8",
+      "resolved": "https://registry.npmjs.org/electron/-/electron-39.8.8.tgz",
+      "integrity": "sha512-24MMLdwCg8xwlWzDxC1XZU2MqW0Xx2UPxt9EU15vMDoRSMHPqmi/BgRCEINXZaBLfFSeXEKGpg+QlBRdL5uwaw==",
       "dev": true,
       "hasInstallScript": true,
       "license": "MIT",
