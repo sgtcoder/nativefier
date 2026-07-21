@@ -584,12 +584,11 @@
       }
     },
     "node_modules/@electron/asar": {
-      "version": "4.2.0",
-      "resolved": "https://registry.npmjs.org/@electron/asar/-/asar-4.2.0.tgz",
-      "integrity": "sha512-npW1NW5yy8EB9XY/vEw9sUdgmq0sJEhmSBb6bqyFOAw1CSkrhvAvO6QWlW8CdIMo8VN1lkdF345l/MeW0LrY0Q==",
+      "version": "4.2.1",
+      "resolved": "https://registry.npmjs.org/@electron/asar/-/asar-4.2.1.tgz",
+      "integrity": "sha512-rGyEe7iy52zxiWuihV/h/AqQrFkx7YnUUJKW1bdufVDHCzIMP/XDrDI/NOzv/LLtzt3NduAzNa475WRmRnmswQ==",
       "license": "MIT",
       "dependencies": {
-        "commander": "^13.1.0",
         "glob": "^13.0.2",
         "minimatch": "^10.0.1"
       },
@@ -3860,13 +3859,11 @@
       }
     },
     "node_modules/commander": {
-      "version": "13.1.0",
-      "resolved": "https://registry.npmjs.org/commander/-/commander-13.1.0.tgz",
-      "integrity": "sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw==",
-      "license": "MIT",
-      "engines": {
-        "node": ">=18"
-      }
+      "version": "2.20.3",
+      "resolved": "https://registry.npmjs.org/commander/-/commander-2.20.3.tgz",
+      "integrity": "sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==",
+      "dev": true,
+      "license": "MIT"
     },
     "node_modules/compare-version": {
       "version": "0.1.2",
@@ -4367,9 +4364,9 @@
       }
     },
     "node_modules/electron-to-chromium": {
-      "version": "1.5.393",
-      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.393.tgz",
-      "integrity": "sha512-kiDJdIUawuEIcp9XoICKp1iTYDEbgguIPq526N1Q7jIQDeQ3CqoMx71025PI/7E48Ddtw2HuWsVjY7afEgNxmg==",
+      "version": "1.5.394",
+      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.394.tgz",
+      "integrity": "sha512-Wmt2Gm0o8JWBuGgmc4XZ0u9s1RaCRqhxP47phplmfg04+qypTUurpeJGP45A7Fhv7jdrrVH44PLlR9qXo37cVQ==",
       "dev": true,
       "license": "ISC"
     },
@@ -8035,9 +8032,9 @@
       }
     },
     "node_modules/prettier": {
-      "version": "3.9.5",
-      "resolved": "https://registry.npmjs.org/prettier/-/prettier-3.9.5.tgz",
-      "integrity": "sha512-/FVl766LpUfB5vXgCYOYa0MeV/441Ia99AeICQIQFTY/Nw0roZwULcXpku5i1/m5kt/baz+s4Zogspd839HSMg==",
+      "version": "3.9.6",
+      "resolved": "https://registry.npmjs.org/prettier/-/prettier-3.9.6.tgz",
+      "integrity": "sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==",
       "dev": true,
       "license": "MIT",
       "bin": {
@@ -9011,13 +9008,6 @@
       "engines": {
         "node": ">=10"
       }
-    },
-    "node_modules/terser/node_modules/commander": {
-      "version": "2.20.3",
-      "resolved": "https://registry.npmjs.org/commander/-/commander-2.20.3.tgz",
-      "integrity": "sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==",
-      "dev": true,
-      "license": "MIT"
     },
     "node_modules/test-exclude": {
       "version": "6.0.0",
